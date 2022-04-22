@@ -1,0 +1,6 @@
+[submodule "ProgressNerf"]
+	path = ProgressNerf
+	url = https://github.com/stanlew7531/ProgressNerf
+[submodule "PoseCNN-PyTorch"]
+	path = PoseCNN-PyTorch
+	url = https://github.com/NVlabs/PoseCNN-PyTorch

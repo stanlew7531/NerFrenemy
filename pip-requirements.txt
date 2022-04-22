@@ -1,0 +1,8 @@
+opencv-python==4.5.3.56
+pyyaml==6.0
+scipy==1.7.1
+setuptools==58.0.4
+tensorboard==2.7.0
+https://download.pytorch.org/whl/cu111/torch-1.9.1%2Bcu111-cp38-cp38-linux_x86_64.whl
+https://download.pytorch.org/whl/cu111/torchvision-0.10.1%2Bcu111-cp38-cp38-linux_x86_64.whl
+tqdm==4.62.3
