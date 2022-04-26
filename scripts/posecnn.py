@@ -70,7 +70,7 @@ def main():
     cfg.renderer.set_camera_default()
     print(dataset.model_mesh_paths)
     cfg.TEST.POSE_REFINE = False
-   
+    cfg.TEST.VISUALIZE = False 
     if os.path.isdir(img_input):
         for img in os.listdir(img_input):
             # for each image
