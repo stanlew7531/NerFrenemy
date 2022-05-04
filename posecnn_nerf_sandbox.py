@@ -1,10 +1,12 @@
+
+## DATASET AND CFG SETUP ##############################################################################
 import sys
 sys.path.insert(1, './PoseCNN-PyTorch/lib')
 from datasets.factory import get_dataset
 from fcn.config import cfg, cfg_from_file, yaml_from_file, get_output_dir
 from ycb_renderer import YCBRenderer
 import torch
-
+import numpy as np
 
 cfg_from_file("./PoseCNN-PyTorch/experiments/cfgs/ycb_object.yml")
 meta = yaml_from_file("./PoseCNN-PyTorch/data/demo/meta.yml")
@@ -51,14 +53,22 @@ dataloader = torch.utils.data.DataLoader(dataset,
                     worker_init_fn=worker_init_fn)
 
 
+# Set meta_data 
+K = dataset._intrinsic_matrix
+K[2, 2] = 1
+Kinv = np.linalg.pinv(K)
+meta_data = np.zeros((1, 18), dtype=np.float32)
+meta_data[0, 0:9] = K.flatten()
+meta_data[0, 9:18] = Kinv.flatten()
+meta_data = torch.from_numpy(meta_data).cuda()
 
 
 
 
 
 
+## Network SETUP ##############################################################################
 
-# SETUP NETWORK
 import torch
 import torch.nn.parallel 
 import torch.backends.cudnn as cudnn 
@@ -66,13 +76,13 @@ import networks
 from utils.nms import *
 
 pretrained = "./PoseCNN-PyTorch/data/checkpoints/ycb_object/vgg16_ycb_object_self_supervision_epoch_8.checkpoint.pth"
+# cfg.TRAIN.FREEZE_LAYERS = False
 network_data = torch.load(pretrained)
 network = networks.__dict__["posecnn"](dataset.num_classes, 64, network_data).cuda()
 network = torch.nn.DataParallel(network, device_ids=[cfg.gpu_id]).cuda()
 cudnn.benchmark = True
 
-if cfg.MODE == 'TRAIN': network.train()
-elif cfg.MODE == 'TEST': network.eval()
+network.eval()
 
 
 
@@ -84,7 +94,9 @@ elif cfg.MODE == 'TEST': network.eval()
 
 
 
-
+## UNUSED CYLINDER SAMPLING CODE ##############################################################################
+# - Finds the pose in the ycb data
+# - splits Cameron's cylinder sampling code
 
 
 import matplotlib.pyplot as plt
@@ -102,15 +114,9 @@ can_mask = ycb_datapoint['label'][0, can_index].int()
 can_pose = ycb_datapoint['poses'][0, can_index]
 
 # NOTE:
-# data poses have: 
-#   [0] -> obj existance 
-#   [1] -> object class id
-#   [2:6] -> quaternion
-#   [6:9] -> offset
-
+# data poses have: [0]->obj existence | [1]->object class id | 2:6]->quaternion | [6:9]->offset
 can_rot = quat2mat(can_pose[2:6].flatten())
 can_trans = can_pose[6:] * 1000
-
 
 
 def sample_on_cylinder(height_mm=100, radius_mm=67):
@@ -130,23 +136,11 @@ def sample_on_cylinder(height_mm=100, radius_mm=67):
         z+=z_inc
     return samples
 
-
-# pose = np.eye(4,4)
-# # rot pi/2 about x
-# pose[0:3, 0:3] = np.array([  [0.0000000, -1.0000000,  0.0000000],
-# [0.0000000,  0.0000000, -1.0000000],
-# [1.0000000,  0.0000000,  0.0000000] ])
-
 class TransformFunctor:
     def __init__(self, rotation_mat, trans_vec):
         self.trans, self.rot = trans_vec, rotation_mat
     def __call__(self, sample):
         return self.rot @ (sample + self.trans)
-
-
-# a = TransformFunctor(can_rot, can_trans)
-# samples = sample_on_cylinder()
-# a(samples[0])
 
 samples = map(TransformFunctor(can_rot, can_trans), sample_on_cylinder())
 
@@ -172,6 +166,7 @@ samples = map(TransformFunctor(can_rot, can_trans), sample_on_cylinder())
 
 
 
+## SETS UP CAMPBEL SOUP CAN NERF ##############################################################################
 
 
 import yaml
@@ -222,6 +217,9 @@ def get_test_pose():    # TODO: remove
     return toSE3Matrix(quat, offset)
     
 test_pose = get_test_pose()
+
+# TODO: render the view based on object pose in ycb data
+
 # test_pose = toSE3Matrix(can_rot, can_trans)
 test_cam_pose = np.linalg.inv(test_pose)
 
@@ -232,8 +230,7 @@ renderings = arch.doFullRender(test_poses, use_cache=True)
 
 nerf_rgb = renderings["rgb"].reshape(1, 480, 640, 3)
 
-
-plt.imshow(nerf_rgb .squeeze().cpu().numpy())
+# plt.imshow(nerf_rgb .squeeze().cpu().numpy())
 # plt.show()
 
 
@@ -249,12 +246,12 @@ plt.imshow(nerf_rgb .squeeze().cpu().numpy())
 
 
 
+## SELECT INPUT TO PASS TO POSECNN ##############################################################################
 
 
 
-# inputs = renderings[0].permute(0, 3, 1, 2).contiguous()  # Eval
 inputs = nerf_rgb.permute(0, 3, 1, 2).contiguous()
-inputs = ycb_img  #torch.tensor(ycb_img).unsqueeze(0).permute(0, 3, 1, 2).contiguous()
+# inputs = ycb_img
 
 
 
@@ -262,68 +259,55 @@ inputs = ycb_img  #torch.tensor(ycb_img).unsqueeze(0).permute(0, 3, 1, 2).contig
 
 
 
-# RUN POSECNN
-
-
-# for each image
-# im = pad_im(cv2.imread(os.path.join(img_input, img), cv2.IMREAD_COLOR), 16)
-
-
-# # rescale image if necessary
-# if cfg.TEST.SCALES_BASE[0] != 1:
-#     im_scale = cfg.TEST.SCALES_BASE[0]
-#     im = pad_im(cv2.resize(im, None, None, fx=im_scale, fy=im_scale, interpolation=cv2.INTER_LINEAR), 16)
-#     if depth is not None:
-#         depth = pad_im(cv2.resize(depth, None, None, fx=im_scale, fy=im_scale, interpolation=cv2.INTER_NEAREST), 16)
-
-# run network
-# im_pose, im_pose_refined, im_label, labels, rois, poses, poses_refined = test_image(network, dataset, im, depth)
-
-
-
-# TODO: rescale?
-K = dataset._intrinsic_matrix
-K[2, 2] = 1
-Kinv = np.linalg.pinv(K)
-meta_data = np.zeros((1, 18), dtype=np.float32)
-meta_data[0, 0:9] = K.flatten()
-meta_data[0, 9:18] = Kinv.flatten()
-meta_data = torch.from_numpy(meta_data).cuda()
-
-if cfg.MODE == 'TEST':
-    out_label, out_vertex, rois, out_pose, out_quaternion = network(inputs, dataset.input_labels, meta_data, \
-            dataset.input_extents, dataset.input_gt_boxes, dataset.input_poses, dataset.input_points,\
-            dataset.input_symmetry)
-    labels = out_label[0]
-elif cfg.MODE == 'TRAIN':
-    out_logsoftmax, out_weight, out_vertex, out_logsoftmax_box, \
-    bbox_labels, bbox_pred, bbox_targets, bbox_inside_weights, loss_pose_tensor, poses_weight \
-            = network(inputs, dataset.input_labels, meta_data, dataset.input_extents, dataset.input_gt_boxes, \
-                dataset.input_poses, dataset.input_points, dataset.input_symmetry)
-
-
+## RUN POSECNN ##############################################################################
 from fcn.train import loss_cross_entropy, smooth_l1_loss
-def get_loss(inputs, sample, meta_data, dataset):
-    # param setting
-    labels =  dataset.input_labels
-    extents = dataset.input_extents
-    gt_boxes = dataset.input_gt_boxes
-    poses = dataset.input_poses
-    points = dataset.input_points
-    symmetry = dataset.input_symmetry
+
+# TODO: pad and rescale image???
+
+def run_net(network, inputs, sample, meta_data, dataset):
+    # # param setting
+    # labels =  dataset.input_labels
+    # extents = dataset.input_extents
+    # gt_boxes = dataset.input_gt_boxes
+    # poses = dataset.input_poses
+    # points = dataset.input_points
+    # symmetry = dataset.input_symmetry
+    # if cfg.TRAIN.VERTEX_REG:
+    #     vertex_targets = sample['vertex_targets'].cuda()
+    #     vertex_weights = sample['vertex_weights'].cuda()
+    # else:
+    #     vertex_targets = []
+    #     vertex_weights = []
+    # return network(inputs, labels, meta_data, extents, gt_boxes, poses, points, symmetry)
+
+
+    # prepare data
+    inputs.cuda()
+    # inputs = sample['image_color'].cuda()
+    im_info = sample['im_info']
+    mask = sample['mask'].cuda()
+    labels = sample['label'].cuda()
+    meta_data = sample['meta_data'].cuda()
+    extents = sample['extents'][0, :, :].repeat(cfg.TRAIN.GPUNUM, 1, 1).cuda()
+    gt_boxes = sample['gt_boxes'].cuda()
+    poses = sample['poses'].cuda()
+    points = sample['points'][0, :, :, :].repeat(cfg.TRAIN.GPUNUM, 1, 1, 1).cuda()
+    symmetry = sample['symmetry'][0, :].repeat(cfg.TRAIN.GPUNUM, 1).cuda()
     if cfg.TRAIN.VERTEX_REG:
         vertex_targets = sample['vertex_targets'].cuda()
         vertex_weights = sample['vertex_weights'].cuda()
     else:
         vertex_targets = []
         vertex_weights = []
+    return network(inputs, labels, meta_data, extents, gt_boxes, poses, points, symmetry)
 
+def get_loss(network_results):
     # compute output
     if cfg.TRAIN.VERTEX_REG:
         if cfg.TRAIN.POSE_REG:
             out_logsoftmax, out_weight, out_vertex, out_logsoftmax_box, \
                 bbox_labels, bbox_pred, bbox_targets, bbox_inside_weights, loss_pose_tensor, poses_weight \
-                = network(inputs, labels, meta_data, extents, gt_boxes, poses, points, symmetry)
+                = network_results
 
             loss_label = loss_cross_entropy(out_logsoftmax, out_weight)
             loss_vertex = cfg.TRAIN.VERTEX_W * smooth_l1_loss(out_vertex, vertex_targets, vertex_weights)
@@ -334,7 +318,7 @@ def get_loss(inputs, sample, meta_data, dataset):
         else:
             out_logsoftmax, out_weight, out_vertex, out_logsoftmax_box, \
                 bbox_labels, bbox_pred, bbox_targets, bbox_inside_weights \
-                = network(inputs, labels, meta_data, extents, gt_boxes, poses, points, symmetry)
+                = network_results
 
             loss_label = loss_cross_entropy(out_logsoftmax, out_weight)
             loss_vertex = cfg.TRAIN.VERTEX_W * smooth_l1_loss(out_vertex, vertex_targets, vertex_weights)
@@ -342,10 +326,82 @@ def get_loss(inputs, sample, meta_data, dataset):
             loss_location = smooth_l1_loss(bbox_pred, bbox_targets, bbox_inside_weights)
             loss = loss_label + loss_vertex + loss_box + loss_location
     else:
-        out_logsoftmax, out_weight = network(inputs, labels, meta_data, extents, gt_boxes, poses, points, symmetry)
+        out_logsoftmax, out_weight = network_results
         loss = loss_cross_entropy(out_logsoftmax, out_weight)
     return loss
 
+
+
+with torch.enable_grad():
+    network.eval()
+    initial_inputs = inputs.clone().detach()
+    optimizer = torch.optim.Adam([inputs])
+    optimizer.zero_grad()
+    inputs.requires_grad=True
+    network_results = run_net(network, inputs, ycb_datapoint, meta_data, dataset)
+    pred_quaterion = network_results[-1]
+    
+    # NOTE: This is obviously just to prove gradients flow.  
+    pred_quaterion.sum().backward()
+    for i in range(1000): optimizer.step()   
+
+    # Visualize
+    fig, axs = plt.subplots(1,2)
+    axs[0].imshow(((inputs+1.0)/2).squeeze().permute(1, 2, 0).detach().cpu().numpy())
+    axs[1].imshow(((initial_inputs+1.0)/2).squeeze().permute(1, 2, 0).detach().cpu().numpy())
+    print("diff:  ", (initial_inputs - inputs).abs().sum())
+    plt.show()
+    print("HALT")
+
+
+
+
+
+######################### 
+######################### 
+exit(0)     ############## 
+######################### 
+######################### 
+
+
+
+# NOTE: Code below is older and mainly for visualization and testing.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+with torch.enable_grad():
+    # network.eval()
+    initial_inputs = inputs.clone().detach()
+    optimizer = torch.optim.Adam([inputs])
+    optimizer.zero_grad()
+    inputs.requires_grad=True
+    network_results = run_net(network, inputs, ycb_datapoint, meta_data, dataset)
+    pose_loss = network_results[8]
+    pose_loss.backward()
+    for i in range(1000): optimizer.step()
+    print("diff:  ", (initial_inputs - inputs).abs().sum())
+    print("HERE")
 
 
 
