@@ -1,6 +1,6 @@
 baseDir: "/home/baldeeb/Documents/Projects/NerFrenemy/data/soup_can_eval"
 load_from_epoch: -1
-batch_size: 4
+batch_size: 10
 num_workers: 1
 train_epochs: 200
 testPeriod: 10
@@ -24,7 +24,7 @@ test_dataloader:
     }
 desired_tool: "04"
 apply_masks: ['04']
-eval_subbatch_size: 1024
+eval_subbatch_size: 512  # 1024
 
 raypicker: "weighted_raypicker"
 weighted_raypicker: { num_rays: 128}
@@ -35,7 +35,7 @@ camera_fx: 1.066778e+03
 camera_fy: 1.067487e+03
 camera_tx: 3.129869e+02
 camera_ty: 2.413109e+02
-render_resoluion: [640,480]
+render_resoluion: [480, 640]
 coarse_model:
     nnModel: "fast_nerf"
     fast_nerf: {includeOrigPos: True, pos_enc_levels: 10, dir_enc_levels: 4, hidden_units_pos: 384, hidden_units_dir: 128, layers_pos: 8, layers_dir: 4, D: 8, skips: [4]}
