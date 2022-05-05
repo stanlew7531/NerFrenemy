@@ -17,6 +17,11 @@ dataset = get_dataset("ycb_object_test")
 
 
 cfg.renderer = YCBRenderer(width=cfg.TRAIN.SYN_WIDTH, height=cfg.TRAIN.SYN_HEIGHT, gpu_id=0, render_marker=False)
+#print(dataset.model_mesh_paths)
+#print(dataset.model_texture_paths)
+#print(dataset.model_colors)
+#raise Exception("stopping to print")
+
 if cfg.TEST.SYNTHESIZE:
     cfg.renderer.load_objects(dataset.model_mesh_paths, dataset.model_texture_paths, dataset.model_colors)
 else:
@@ -218,22 +223,14 @@ def get_test_pose():    # TODO: remove
     
 test_pose = get_test_pose()
 
-# TODO: render the view based on object pose in ycb data
-
-# test_pose = toSE3Matrix(can_rot, can_trans)
 test_cam_pose = np.linalg.inv(test_pose)
 
 test_poses = torch.cat((torch.Tensor(test_cam_pose).unsqueeze(0),), dim = 0)
 
-# renderings = arch.doEvalRendering(test_poses)
+#renderings, _ = arch.doEvalRendering(test_poses)
 renderings = arch.doFullRender(test_poses, use_cache=True)
 
-nerf_rgb = renderings["rgb"].reshape(1, 480, 640, 3)
-
-# plt.imshow(nerf_rgb .squeeze().cpu().numpy())
-# plt.show()
-
-
+nerf_rgb = renderings['rgb'].contiguous().reshape((1, 640, 480, 3)).transpose(1,2).contiguous()
 
 
 

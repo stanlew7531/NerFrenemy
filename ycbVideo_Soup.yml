@@ -1,4 +1,4 @@
-baseDir: "/home/baldeeb/Documents/Projects/NerFrenemy/data/soup_can_eval"
+baseDir: "/home/stanlew/Documents/ProgressNerfModels/ycb_video/soup_can_6"
 load_from_epoch: -1
 batch_size: 10
 num_workers: 1
@@ -10,18 +10,11 @@ build_weighting_cloud: True
 
 train_dataloader:
     dataloader: "YCBVideoDataloader"
-    YCBVideoDataloader: { 
-        baseDataDir: "/home/baldeeb/Documents/Projects/NerFrenemy/data/", 
-        scenes: ["0003","0008","0012","0017","0018","0021","0022","0033","0034"], 
-        datasetType: "train", samplesLimit: 1500, rel_tools: ["04"]
-    }
+    YCBVideoDataloader: { baseDataDir: "/home/stanlew/data/ycb-video-noclutter/tool-parts_dataset/", scenes: ["0003","0008", "0012"], datasetType: "train", samplesLimit: -1, rel_tools: ["04"]}
 test_dataloader:
     dataloader: "YCBVideoDataloader"
-    YCBVideoDataloader: { 
-        baseDataDir: "/home/baldeeb/Documents/Projects/NerFrenemy/data/", 
-        scenes: ["0050","0051","0053","0057","0059"], 
-        datasetType: "test", samplesLimit: 5, rel_tools: ["04"]
-    }
+    YCBVideoDataloader: { baseDataDir: "/home/stanlew/data/ycb-video-noclutter/tool-parts_dataset/", scenes: ["0036","0037","0044"], datasetType: "train", samplesLimit: 5, rel_tools: ["04"]}
+
 desired_tool: "04"
 apply_masks: ['04']
 eval_subbatch_size: 512  # 1024
@@ -29,13 +22,13 @@ eval_subbatch_size: 512  # 1024
 raypicker: "weighted_raypicker"
 weighted_raypicker: { num_rays: 128}
 raysampler: "voxel_grid_bbox"
-voxel_grid_bbox: { num_samples: 64}
+voxel_grid_bbox: { num_samples: 128}
 
 camera_fx: 1.066778e+03
 camera_fy: 1.067487e+03
 camera_tx: 3.129869e+02
 camera_ty: 2.413109e+02
-render_resoluion: [480, 640]
+render_resoluion: [640, 480]
 coarse_model:
     nnModel: "fast_nerf"
     fast_nerf: {includeOrigPos: True, pos_enc_levels: 10, dir_enc_levels: 4, hidden_units_pos: 384, hidden_units_dir: 128, layers_pos: 8, layers_dir: 4, D: 8, skips: [4]}
@@ -57,12 +50,10 @@ cache_l: 1024
 cache_voxel_size: 0.001
 cache_D: 8
 
-boundary_min_maxes: [-0.05, -0.05, -0.05, 0.05, 0.05, 0.05]
+boundary_min_maxes: [-0.05, -0.05, -0.055, 0.05, 0.05, 0.055]
 
-# renderer: "voxel_neural_renderer"
-# voxel_neural_renderer: {}
-renderer: "neural_renderer"
-neural_renderer: {}
+renderer: "voxel_neural_renderer"
+voxel_neural_renderer: {}
 train_loss:
     loss_fn: "mse_loss"
     mse_loss: {}
