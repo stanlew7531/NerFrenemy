@@ -78,6 +78,14 @@ from ProgressNerf.Utils.CameraUtils import BuildCameraMatrix
 # from fcn.train import loss_cross_entropy, smooth_l1_loss
 
 
+import cv2
+from skimage import measure
+import scipy.ndimage as ndimage 
+from skimage.color import rgb2gray
+from skimage.filters import gaussian
+from skimage.segmentation import (morphological_geodesic_active_contour,
+                                  inverse_gaussian_gradient)
+
 
 
 
@@ -218,7 +226,9 @@ def get_depth_rgb_from_render(render_result, num_cameras, width, height):
         .reshape((num_cameras, width, height, 3)).transpose(1,2).contiguous()
     depth_output = render_result['depth']\
         .reshape((num_cameras, width, height, 1)).transpose(1,2).contiguous()
-    return rgb_output, depth_output
+    acc_output = render_result['acc']\
+        .reshape((num_cameras, width, height, 1)).transpose(1,2).contiguous()
+    return rgb_output, depth_output, acc_output
 
 def sample_on_cylinder(height_mm=100, radius_mm=33):
     samples = []
@@ -292,40 +302,62 @@ def main(args):
             plt.imshow(image_color[0].cpu())
             plt.show()
             sample_pose = torch.linalg.inv(sample['04_pose'])
-            print(sample_pose)
-            render_result = arch.doFullRender(sample_pose, use_cache=True)
-            nerf_rgb, nerf_depth = get_depth_rgb_from_render(render_result, 1, 640, 480)
-            print(nerf_rgb.shape)
+            render_result = arch.doFullRender(sample_pose, use_cache=False)
+            nerf_rgb, nerf_depth, nerf_acc = get_depth_rgb_from_render(render_result, 1, 640, 480)
+            depth = nerf_depth[0,:,:,0].cpu().detach().numpy()
+            image = (nerf_rgb[0].cpu().detach().numpy()*255).astype(np.uint8)
+
+            grayscale = rgb2gray(image)
+            grayscale = gaussian(grayscale, sigma=3, channel_axis=-1)
+            gimage = inverse_gaussian_gradient(grayscale)
+
+            # Initial level set
+            init_ls = np.zeros(grayscale.shape, dtype=np.int8)
+            init_ls[10:-10, 10:-10] = 1
+            # List with intermediate results for plotting the evolution
+            ls = morphological_geodesic_active_contour(gimage, num_iter=250,
+                                                       init_level_set=init_ls,
+                                                       smoothing=1, balloon=-1.3,
+                                                       threshold=0.98)
+            print(ls.shape)
+
+            contours = measure.find_contours(ls, 0.5)
+
+            mx = [0,0]
+            for i,contour in enumerate(contours):
+                c = np.expand_dims(contour.astype(np.float32), 1)
+                # Convert it to UMat object
+                c = cv2.UMat(c)
+                area = cv2.contourArea(c)
+                if area>mx[0]:
+                    mx = [area,i]
+            
+        
+            contour = contours[mx[1]]
+            r_mask = np.zeros_like(grayscale, dtype='bool')
+            r_mask[np.round(contour[:, 0]).astype('int'), np.round(contour[:, 1]).astype('int')] = 1
+            r_mask = ndimage.binary_fill_holes(r_mask)
+
+
+            depth = depth * r_mask
+            print(np.mean(depth[r_mask]))
+            plt.imshow(depth<np.mean(depth[r_mask])-0.01)
+            plt.show()
+            depth[depth<np.mean(depth[r_mask])-0.01] = 0
+            
+            acc = nerf_acc[0,:,:,0].cpu().detach().numpy()
             plt.axis('off')
             plt.imshow(nerf_rgb[0].detach().cpu())
             plt.show()
-            raise Exception("asdf")
+            plt.imshow(depth)
+            plt.show()
+            plt.imshow(nerf_acc[0,:,:,0].detach().cpu())
+            plt.show()
+            plt.imshow(r_mask)
+            plt.show()
 
-    if args.train_data:
-        grasp_sampler_args.dataset_root_folder = args.dataset_root_folder
-        grasp_sampler_args.num_grasps_per_object = 1
-        grasp_sampler_args.num_objects_per_batch = 1
-        dataset = DataLoader(grasp_sampler_args)
-        for i, data in enumerate(dataset):
-            generated_grasps, generated_scores = estimator.generate_and_refine_grasps(
-                data["pc"].squeeze())
-            mlab.figure(bgcolor=(1, 1, 1))
-            draw_scene(data["pc"][0],
-                       grasps=generated_grasps,
-                       grasp_scores=generated_scores)
-            print('close the window to continue to next object . . .')
-            mlab.show()
-    else:
-        for npy_file in glob.glob(os.path.join(args.npy_folder, '*.npy')):
-            # Depending on your numpy version you may need to change allow_pickle
-            # from True to False.
-
-            data = np.load(npy_file, allow_pickle=True,
-                           encoding="latin1").item()
-
-            depth = data['depth']
-            image = data['image']
-            K = data['intrinsics_matrix']
+            K = arch.cam_matrix.numpy()
+            
             # Removing points that are farther than 1 meter or missing depth
             # values.
             #depth[depth == 0 or depth > 1] = np.nan
@@ -343,7 +375,8 @@ def main(args):
 
             # Smoothed pc comes from averaging the depth for 10 frames and removing
             # the pixels with jittery depth between those 10 frames.
-            object_pc = data['smoothed_object_pc']
+            #object_pc = data['smoothed_object_pc']
+            object_pc = pc
             generated_grasps, generated_scores = estimator.generate_and_refine_grasps(
                 object_pc)
             mlab.figure(bgcolor=(1, 1, 1))
@@ -356,6 +389,10 @@ def main(args):
             print('close the window to continue to next object . . .')
             mlab.show()
 
+            break
+            raise Exception("asdf")
+
+    
 
 if __name__ == '__main__':
     main(sys.argv[1:])
